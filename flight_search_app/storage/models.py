@@ -67,6 +67,7 @@ class PriceHistoryEntry:
     number_of_stops: int
     departure_time: datetime
     arrival_time: datetime
+    duration: str
     source_provider: str
     booking_url: str | None
 

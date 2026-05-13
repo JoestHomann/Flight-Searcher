@@ -109,25 +109,25 @@ Required fields:
 
 ## Phase 3 - Database Layer
 
-[ ] Create storage/database.py.
+[x] Create storage/database.py.
 
-[ ] Initialize SQLite database.
+[x] Initialize SQLite database.
 
-[ ] Create tracked_routes table.
+[x] Create tracked_routes table.
 
-[ ] Create price_history table.
+[x] Create price_history table.
 
-[ ] Implement function to add tracked route.
+[x] Implement function to add tracked route.
 
-[ ] Implement function to remove tracked route.
+[x] Implement function to remove tracked route.
 
-[ ] Implement function to list tracked routes.
+[x] Implement function to list tracked routes.
 
-[ ] Implement function to add price history entry.
+[x] Implement function to add price history entry.
 
-[ ] Implement function to load price history for one tracked route.
+[x] Implement function to load price history for one tracked route.
 
-[ ] Add basic database tests.
+[x] Add basic database tests.
 
 ---
 
