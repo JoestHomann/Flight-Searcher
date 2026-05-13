@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
-from flight_search_app.storage import FlightOffer
+from storage import FlightOffer
 
 from .base_provider import FlightProvider
 

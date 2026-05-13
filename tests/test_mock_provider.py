@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from flight_search_app.flight_api import FlightProvider, MockFlightProvider
+from flight_api import FlightProvider, MockFlightProvider
 
 
 def test_mock_provider_returns_realistic_offers():

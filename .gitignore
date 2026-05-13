@@ -3,4 +3,6 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-flight_search_app/storage/*.db
+TODO.txt
+requirements.txt
+storage/*.db

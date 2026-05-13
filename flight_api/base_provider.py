@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from datetime import date
 from decimal import Decimal
 
-from flight_search_app.storage import FlightOffer
+from storage import FlightOffer
 
 
 class FlightProvider(ABC):
