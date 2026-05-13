@@ -4,11 +4,22 @@ from __future__ import annotations
 
 import tkinter as tk
 from collections.abc import Callable
+from pathlib import Path
 from tkinter import messagebox, ttk
 
 from flight_api import MockFlightProvider
-from services import SearchService, SearchValidationError
-from storage import FlightOffer
+from services import (
+    SearchService,
+    SearchValidationError,
+    TrackingError,
+    TrackingService,
+    TrackedRouteStatus,
+)
+from storage import (
+    FlightOffer,
+    PriceHistoryEntry,
+    initialize_database,
+)
 
 
 RESULT_COLUMNS = (
@@ -21,6 +32,17 @@ RESULT_COLUMNS = (
     ("stops", "Stops", 70),
     ("price", "Price", 90),
     ("currency", "Currency", 80),
+)
+
+TRACKING_COLUMNS = (
+    ("id", "ID", 60),
+    ("route", "Route", 130),
+    ("departure", "Departure", 110),
+    ("return", "Return", 110),
+    ("target", "Target", 100),
+    ("last_checked", "Last Checked", 150),
+    ("current", "Current", 100),
+    ("lowest", "Lowest", 100),
 )
 
 
@@ -36,6 +58,31 @@ def format_offer_row(offer: FlightOffer) -> tuple[str, ...]:
         f"{offer.price:.2f}",
         offer.currency,
     )
+
+
+def format_route_status_row(status: TrackedRouteStatus) -> tuple[str, ...]:
+    route = status.route
+    target = f"{route.max_price:.2f} {route.currency}" if route.max_price else ""
+    current = (
+        f"{status.current_price:.2f} {route.currency}" if status.current_price else ""
+    )
+    lowest = f"{status.lowest_price:.2f} {route.currency}" if status.lowest_price else ""
+    return (
+        str(route.id),
+        f"{route.origin} -> {route.destination}",
+        route.departure_date.isoformat(),
+        route.return_date.isoformat() if route.return_date else "",
+        target,
+        route.last_checked_at.strftime("%Y-%m-%d %H:%M")
+        if route.last_checked_at
+        else "",
+        current,
+        lowest,
+    )
+
+
+def format_price_history_message(entry: PriceHistoryEntry) -> str:
+    return f"Current cheapest: {entry.price:.2f} {entry.currency} ({entry.airline})"
 
 
 class SearchTab(ttk.Frame):
@@ -205,7 +252,13 @@ class SearchTab(ttk.Frame):
         if self.on_save_route is None:
             self.status_var.set("Tracking is not connected yet.")
             return
-        self.on_save_route(self.last_search, offer)
+        try:
+            self.on_save_route(self.last_search, offer)
+        except TrackingError as exc:
+            messagebox.showerror("Tracking error", str(exc))
+            self.status_var.set(str(exc))
+            return
+        self.status_var.set("Route saved.")
 
     def get_selected_offer(self) -> FlightOffer | None:
         selection = self.results_table.selection()
@@ -228,6 +281,93 @@ class SearchTab(ttk.Frame):
         }
 
 
+class TrackingTab(ttk.Frame):
+    def __init__(
+        self,
+        parent: tk.Widget,
+        tracking_service: TrackingService,
+    ) -> None:
+        super().__init__(parent, padding=12)
+        self.tracking_service = tracking_service
+        self.status_var = tk.StringVar()
+        self._build()
+        self.refresh()
+
+    def _build(self) -> None:
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        self.routes_table = ttk.Treeview(
+            self,
+            columns=[column_id for column_id, _, _ in TRACKING_COLUMNS],
+            show="headings",
+            selectmode="browse",
+        )
+        for column_id, heading, width in TRACKING_COLUMNS:
+            self.routes_table.heading(column_id, text=heading)
+            self.routes_table.column(column_id, width=width, anchor="w")
+        self.routes_table.grid(row=0, column=0, sticky="nsew")
+
+        table_scrollbar = ttk.Scrollbar(
+            self, orient="vertical", command=self.routes_table.yview
+        )
+        table_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.routes_table.configure(yscrollcommand=table_scrollbar.set)
+
+        actions = ttk.Frame(self)
+        actions.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        actions.columnconfigure(0, weight=1)
+        ttk.Label(actions, textvariable=self.status_var).grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Button(actions, text="Refresh", command=self.refresh).grid(
+            row=0, column=1, padx=(8, 0)
+        )
+        ttk.Button(actions, text="Check Price Now", command=self._check_price).grid(
+            row=0, column=2, padx=(8, 0)
+        )
+        ttk.Button(actions, text="Remove", command=self._remove_route).grid(
+            row=0, column=3, padx=(8, 0)
+        )
+
+    def refresh(self) -> None:
+        for item_id in self.routes_table.get_children():
+            self.routes_table.delete(item_id)
+        for status in self.tracking_service.list_route_statuses():
+            route_id = status.route.id
+            self.routes_table.insert(
+                "", "end", iid=str(route_id), values=format_route_status_row(status)
+            )
+
+    def _selected_route_id(self) -> int | None:
+        selection = self.routes_table.selection()
+        if not selection:
+            self.status_var.set("Select a tracked route first.")
+            return None
+        return int(selection[0])
+
+    def _check_price(self) -> None:
+        route_id = self._selected_route_id()
+        if route_id is None:
+            return
+        try:
+            entry = self.tracking_service.check_price_now(route_id)
+        except TrackingError as exc:
+            messagebox.showerror("Tracking error", str(exc))
+            self.status_var.set(str(exc))
+            return
+        self.refresh()
+        self.status_var.set(format_price_history_message(entry))
+
+    def _remove_route(self) -> None:
+        route_id = self._selected_route_id()
+        if route_id is None:
+            return
+        self.tracking_service.remove_route(route_id)
+        self.refresh()
+        self.status_var.set("Route removed.")
+
+
 class FlightSearchApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -235,16 +375,23 @@ class FlightSearchApp(tk.Tk):
         self.geometry("1080x640")
         self.minsize(900, 520)
 
+        database = initialize_database(Path("storage") / "flight_search.db")
         search_service = SearchService(MockFlightProvider())
+        tracking_service = TrackingService(database, search_service)
 
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True)
 
-        self.search_tab = SearchTab(notebook, search_service)
+        self.search_tab = SearchTab(notebook, search_service, self._save_route)
+        self.tracking_tab = TrackingTab(notebook, tracking_service)
         notebook.add(self.search_tab, text="Search")
-        notebook.add(self._simple_tab(notebook, "Tracking"), text="Tracking")
+        notebook.add(self.tracking_tab, text="Tracking")
         notebook.add(self._simple_tab(notebook, "Price Graph"), text="Price Graph")
         notebook.add(self._simple_tab(notebook, "Settings"), text="Settings")
+
+    def _save_route(self, search_values: dict[str, str], offer: FlightOffer) -> None:
+        self.tracking_tab.tracking_service.add_route_from_search(search_values, offer)
+        self.tracking_tab.refresh()
 
     @staticmethod
     def _simple_tab(parent: tk.Widget, label: str) -> ttk.Frame:

@@ -103,12 +103,34 @@ class FlightSearchDatabase:
         with self._connect() as connection:
             connection.execute("DELETE FROM tracked_routes WHERE id = ?", (route_id,))
 
+    def get_tracked_route(self, route_id: int) -> TrackedRoute | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM tracked_routes WHERE id = ?", (route_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return self._tracked_route_from_row(row)
+
     def list_tracked_routes(self) -> list[TrackedRoute]:
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT * FROM tracked_routes ORDER BY created_at DESC, id DESC"
             ).fetchall()
         return [self._tracked_route_from_row(row) for row in rows]
+
+    def update_tracked_route_last_checked(
+        self, route_id: int, checked_at: datetime
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE tracked_routes
+                SET last_checked_at = ?
+                WHERE id = ?
+                """,
+                (checked_at.isoformat(), route_id),
+            )
 
     def add_price_history_entry(
         self, entry: PriceHistoryEntry
