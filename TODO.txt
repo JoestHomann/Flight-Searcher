@@ -1,0 +1,462 @@
+# Flight Search GUI - To-Do List
+
+## Current Implementation Standpoint
+
+Current state:
+- Project idea is defined.
+- No implementation exists yet.
+- Required core features are known:
+  - Search cheap flights by origin, destination, time/date, and maximum price.
+  - Show results in a simple GUI.
+  - Save selected routes for price tracking.
+  - Store price history over time.
+  - Plot price timeline for a selected route.
+
+Next step:
+- Build the project structure and implement a minimal working prototype with mock flight data before connecting a real API.
+
+---
+
+## Phase 1 - Project Setup
+
+[x] Create project folder flight_search_app.
+
+[x] Create basic file structure:
+
+    flight_search_app/
+    ├── main.py
+    ├── config.py
+    ├── requirements.txt
+    ├── .env.example
+    ├── gui/
+    ├── flight_api/
+    ├── storage/
+    ├── plotting/
+    ├── services/
+    └── tests/
+
+[x] Create Python virtual environment.
+
+[x] Install first dependencies:
+
+    requests
+    python-dotenv
+    pandas
+    matplotlib
+    pytest
+
+[x] Decide GUI framework:
+    [x] Tkinter for first simple version
+    [ ] PySide6 only if a more modern GUI is desired
+
+[x] Create .env.example with placeholder API variables.
+
+[x] Add .env to .gitignore.
+
+---
+
+## Phase 2 - Define Data Models
+
+[x] Define a FlightOffer data structure.
+
+Required fields:
+
+- airline
+- origin
+- destination
+- departure_time
+- arrival_time
+- duration
+- number_of_stops
+- price
+- currency
+- booking_url
+- source_provider
+
+[x] Define a TrackedRoute data structure.
+
+Required fields:
+
+- id
+- origin
+- destination
+- departure_date
+- return_date
+- is_round_trip
+- max_price
+- currency
+- active
+- created_at
+- last_checked_at
+
+[x] Define a PriceHistoryEntry data structure.
+
+Required fields:
+
+- id
+- tracked_route_id
+- checked_at
+- airline
+- price
+- currency
+- number_of_stops
+- departure_time
+- arrival_time
+- source_provider
+- booking_url
+
+---
+
+## Phase 3 - Database Layer
+
+[ ] Create storage/database.py.
+
+[ ] Initialize SQLite database.
+
+[ ] Create tracked_routes table.
+
+[ ] Create price_history table.
+
+[ ] Implement function to add tracked route.
+
+[ ] Implement function to remove tracked route.
+
+[ ] Implement function to list tracked routes.
+
+[ ] Implement function to add price history entry.
+
+[ ] Implement function to load price history for one tracked route.
+
+[ ] Add basic database tests.
+
+---
+
+## Phase 4 - Mock Flight API Provider
+
+[ ] Create flight_api/base_provider.py.
+
+[ ] Define common provider interface:
+
+    search_flights(
+        origin,
+        destination,
+        departure_date,
+        return_date,
+        max_price,
+        currency
+    )
+
+[ ] Create flight_api/mock_provider.py.
+
+[ ] Return realistic fake flight data.
+
+[ ] Make sure mock data includes:
+    [ ] Several prices
+    [ ] Several airlines
+    [ ] Direct and indirect flights
+    [ ] Different departure times
+
+[ ] Use mock provider in the GUI during early development.
+
+---
+
+## Phase 5 - Search Service
+
+[ ] Create services/search_service.py.
+
+[ ] Connect GUI input to provider search function.
+
+[ ] Validate input before search.
+
+Validation rules:
+
+[ ] Origin must not be empty.
+[ ] Destination must not be empty.
+[ ] Departure date must be valid.
+[ ] Return date must be valid if round-trip is selected.
+[ ] Maximum price must be numeric if provided.
+
+[ ] Filter returned flights by maximum price.
+
+[ ] Sort results by price ascending.
+
+[ ] Return clean list of FlightOffer objects.
+
+---
+
+## Phase 6 - Basic GUI
+
+[ ] Create gui/app.py.
+
+[ ] Create main application window.
+
+[ ] Add tabs:
+    [ ] Search
+    [ ] Tracking
+    [ ] Price Graph
+    [ ] Settings
+
+[ ] Build Search tab.
+
+Search tab should contain:
+
+[ ] Origin input field.
+[ ] Destination input field.
+[ ] Departure date input.
+[ ] Return date input.
+[ ] One-way / round-trip selector.
+[ ] Maximum price input.
+[ ] Currency selector.
+[ ] Search button.
+[ ] Results table.
+
+[ ] Display search results in table.
+
+Table columns:
+
+[ ] Airline
+[ ] Origin
+[ ] Destination
+[ ] Departure
+[ ] Arrival
+[ ] Duration
+[ ] Stops
+[ ] Price
+[ ] Currency
+
+[ ] Add button to save selected result/route for tracking.
+
+---
+
+## Phase 7 - Tracking Functionality
+
+[ ] Create services/tracking_service.py.
+
+[ ] Add selected search route to tracked_routes table.
+
+[ ] Show all tracked routes in Tracking tab.
+
+[ ] Allow user to remove a tracked route.
+
+[ ] Add manual "Check price now" button.
+
+[ ] When checking price:
+    [ ] Run flight search again for that tracked route.
+    [ ] Find cheapest result.
+    [ ] Save cheapest result to price_history.
+    [ ] Update last_checked_at.
+    [ ] Update current displayed price.
+
+[ ] Display lowest historical price for each tracked route.
+
+---
+
+## Phase 8 - Price Plot
+
+[ ] Create plotting/price_plot.py.
+
+[ ] Load price history from database.
+
+[ ] Plot price over time using matplotlib.
+
+Plot requirements:
+
+[ ] X-axis shows check timestamp.
+[ ] Y-axis shows price.
+[ ] Plot cheapest price per check.
+[ ] Show title with origin and destination.
+[ ] Show grid.
+[ ] Show target price line if max_price is defined.
+
+[ ] Embed plot into GUI Price Graph tab.
+
+[ ] Add route selector dropdown.
+
+[ ] Add "Plot price history" button.
+
+---
+
+## Phase 9 - Real Flight API Integration
+
+[ ] Choose first real API provider.
+
+Recommended first choice:
+
+[ ] Amadeus for Developers
+
+Alternative:
+
+[ ] Kiwi/Tequila API
+
+[ ] Create API account.
+
+[ ] Get API key/client credentials.
+
+[ ] Store credentials in .env.
+
+[ ] Implement provider class:
+
+    flight_api/amadeus_provider.py
+
+[ ] Map API response to internal FlightOffer format.
+
+[ ] Handle API errors:
+    [ ] Invalid credentials
+    [ ] Rate limit
+    [ ] No flights found
+    [ ] Network timeout
+    [ ] Unexpected response format
+
+[ ] Add setting to switch between mock provider and real provider.
+
+---
+
+## Phase 10 - Non-Freezing GUI
+
+[ ] Move flight search API calls into a background thread.
+
+[ ] Show loading indicator while search is running.
+
+[ ] Disable search button while search is running.
+
+[ ] Re-enable search button after search completes.
+
+[ ] Show error message if search fails.
+
+---
+
+## Phase 11 - Configuration
+
+[ ] Create config.py.
+
+[ ] Load settings from .env.
+
+Required settings:
+
+[ ] FLIGHT_API_PROVIDER
+[ ] AMADEUS_CLIENT_ID
+[ ] AMADEUS_CLIENT_SECRET
+[ ] DEFAULT_CURRENCY
+[ ] DEFAULT_ORIGIN
+[ ] DATABASE_PATH
+
+[ ] Add Settings tab fields for:
+    [ ] Default currency
+    [ ] Default origin
+    [ ] API provider display
+    [ ] Database path display
+
+---
+
+## Phase 12 - Testing
+
+[ ] Test mock provider.
+
+[ ] Test input validation.
+
+[ ] Test database creation.
+
+[ ] Test adding tracked route.
+
+[ ] Test saving price history.
+
+[ ] Test loading price history.
+
+[ ] Test price filtering.
+
+[ ] Test sorting by price.
+
+[ ] Test plotting function with sample data.
+
+---
+
+## Phase 13 - Optional Automatic Tracking
+
+[ ] Add scheduler package.
+
+Suggested package:
+
+    APScheduler
+
+[ ] Add automatic checking for active tracked routes.
+
+[ ] Allow user to choose check interval:
+    [ ] Manual only
+    [ ] Daily
+    [ ] Every 12 hours
+    [ ] Every 6 hours
+    [ ] Hourly
+
+[ ] Save new price entry after each scheduled check.
+
+[ ] Prevent duplicate entries if price was already checked recently.
+
+---
+
+## Phase 14 - Optional Notifications
+
+[ ] Add notification if price drops below target.
+
+Possible notification types:
+
+[ ] GUI popup
+[ ] Desktop notification
+[ ] Email notification
+
+[ ] Add notification setting per tracked route.
+
+[ ] Add "last notified at" field to prevent spam.
+
+---
+
+## Phase 15 - Polish
+
+[ ] Improve GUI layout.
+
+[ ] Add airport code hints, for example STR, BER, FRA, MUC.
+
+[ ] Add date picker widget.
+
+[ ] Add CSV export for price history.
+
+[ ] Add "open booking link" button.
+
+[ ] Add logging.
+
+[ ] Add README with setup instructions.
+
+[ ] Add screenshots of GUI.
+
+---
+
+## Suggested MVP Build Order
+
+1. Create project structure.
+2. Implement mock provider.
+3. Implement search service.
+4. Build Search tab.
+5. Display mock results in GUI.
+6. Implement SQLite database.
+7. Save tracked routes.
+8. Save price history.
+9. Plot price history.
+10. Connect one real flight API provider.
+11. Add error handling.
+12. Add background thread for API calls.
+13. Add automatic tracking later.
+
+---
+
+## Definition of Done for First Version
+
+The first version is complete when:
+
+[ ] The app starts with python main.py.
+[ ] The user can enter origin, destination, date, and maximum price.
+[ ] The app displays matching flight offers.
+[ ] The user can save a route for tracking.
+[ ] The app stores price history locally.
+[ ] The user can manually update the tracked price.
+[ ] The app plots the price history of a selected route.
+[ ] API keys are not hardcoded.
+[ ] The app works with mock data even without internet/API access.
