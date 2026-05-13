@@ -1,13 +1,16 @@
 from datetime import datetime
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
+from config import AppConfig
 from gui.app import (
     RESULT_COLUMNS,
     TRACKING_COLUMNS,
     format_offer_row,
     format_price_history_message,
     format_route_status_row,
+    settings_display_rows,
 )
 from services import TrackedRouteStatus
 from storage import FlightOffer, PriceHistoryEntry, TrackedRoute
@@ -98,3 +101,22 @@ def test_format_price_history_message():
     assert format_price_history_message(entry) == (
         "Current cheapest: 89.99 EUR (Ryanair)"
     )
+
+
+def test_settings_display_rows_hides_secret_values():
+    config = AppConfig(
+        flight_api_provider="amadeus",
+        amadeus_client_id="client-id",
+        amadeus_client_secret="client-secret",
+        default_currency="EUR",
+        default_origin="STR",
+        database_path=Path("storage/flight_search.db"),
+        amadeus_base_url="https://test.api.amadeus.com",
+        request_timeout_seconds=20,
+    )
+
+    rows = dict(settings_display_rows(config))
+
+    assert rows["Flight API Provider"] == "amadeus"
+    assert rows["Amadeus Credentials"] == "Configured"
+    assert "client-secret" not in rows.values()
