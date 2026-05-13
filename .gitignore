@@ -6,3 +6,4 @@ __pycache__/
 TODO.txt
 requirements.txt
 storage/*.db
+storage/*.log

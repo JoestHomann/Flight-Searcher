@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 import threading
+import webbrowser
 from collections.abc import Callable
-from tkinter import messagebox, ttk
+from datetime import date, timedelta
+from tkinter import filedialog, messagebox, ttk
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
@@ -23,6 +26,7 @@ from services import (
     TrackingError,
     TrackingService,
     TrackedRouteStatus,
+    export_price_history_to_csv,
 )
 from storage import (
     FlightOffer,
@@ -30,6 +34,9 @@ from storage import (
     TrackedRoute,
     initialize_database,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 RESULT_COLUMNS = (
@@ -122,6 +129,59 @@ def settings_display_rows(config: AppConfig) -> list[tuple[str, str]]:
     return [(label, values[key]) for label, key in SETTINGS_ROWS]
 
 
+class DatePickerPopup(tk.Toplevel):
+    def __init__(self, parent: tk.Widget, target_var: tk.StringVar) -> None:
+        super().__init__(parent)
+        self.title("Pick Date")
+        self.resizable(False, False)
+        self.target_var = target_var
+        self.selected_date = self._initial_date(target_var.get())
+        self.date_var = tk.StringVar(value=self.selected_date.isoformat())
+        self._build()
+        self.transient(parent.winfo_toplevel())
+        self.grab_set()
+
+    def _build(self) -> None:
+        frame = ttk.Frame(self, padding=12)
+        frame.pack(fill="both", expand=True)
+        ttk.Entry(frame, textvariable=self.date_var, width=14).grid(
+            row=0, column=0, columnspan=4, sticky="ew", pady=(0, 8)
+        )
+        ttk.Button(frame, text="-1d", command=lambda: self._shift(-1)).grid(
+            row=1, column=0, padx=(0, 4)
+        )
+        ttk.Button(frame, text="Today", command=self._today).grid(
+            row=1, column=1, padx=4
+        )
+        ttk.Button(frame, text="+1d", command=lambda: self._shift(1)).grid(
+            row=1, column=2, padx=4
+        )
+        ttk.Button(frame, text="Use", command=self._apply).grid(
+            row=1, column=3, padx=(4, 0)
+        )
+
+    def _shift(self, days: int) -> None:
+        self.selected_date = self._initial_date(self.date_var.get()) + timedelta(
+            days=days
+        )
+        self.date_var.set(self.selected_date.isoformat())
+
+    def _today(self) -> None:
+        self.selected_date = date.today()
+        self.date_var.set(self.selected_date.isoformat())
+
+    def _apply(self) -> None:
+        self.target_var.set(self._initial_date(self.date_var.get()).isoformat())
+        self.destroy()
+
+    @staticmethod
+    def _initial_date(value: str) -> date:
+        try:
+            return date.fromisoformat(value.strip())
+        except ValueError:
+            return date.today()
+
+
 class SearchTab(ttk.Frame):
     def __init__(
         self,
@@ -172,12 +232,23 @@ class SearchTab(ttk.Frame):
         ttk.Entry(controls, textvariable=self.departure_date_var, width=14).grid(
             row=1, column=2, sticky="ew", padx=(0, 8)
         )
+        ttk.Button(
+            controls,
+            text="Pick",
+            command=lambda: DatePickerPopup(self, self.departure_date_var),
+        ).grid(row=2, column=2, sticky="ew", padx=(0, 8), pady=(4, 0))
 
         ttk.Label(controls, text="Return").grid(row=0, column=3, sticky="w")
         self.return_entry = ttk.Entry(
             controls, textvariable=self.return_date_var, width=14
         )
         self.return_entry.grid(row=1, column=3, sticky="ew", padx=(0, 8))
+        self.return_pick_button = ttk.Button(
+            controls,
+            text="Pick",
+            command=lambda: DatePickerPopup(self, self.return_date_var),
+        )
+        self.return_pick_button.grid(row=2, column=3, sticky="ew", padx=(0, 8), pady=(4, 0))
 
         trip_frame = ttk.Frame(controls)
         trip_frame.grid(row=1, column=4, sticky="ew", padx=(0, 8))
@@ -214,6 +285,10 @@ class SearchTab(ttk.Frame):
             controls, text="Search", command=self._on_search
         )
         self.search_button.grid(row=1, column=7, sticky="ew")
+        ttk.Label(
+            controls,
+            text="Airport hints: STR, BER, FRA, MUC",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         self.results_table = ttk.Treeview(
             self,
@@ -246,10 +321,18 @@ class SearchTab(ttk.Frame):
             state="disabled",
         )
         self.save_button.grid(row=0, column=1, sticky="e")
+        self.open_button = ttk.Button(
+            actions,
+            text="Open Booking",
+            command=self._on_open_booking,
+            state="disabled",
+        )
+        self.open_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
 
     def _sync_return_date_state(self) -> None:
         state = "normal" if self.trip_type_var.get() == "round_trip" else "disabled"
         self.return_entry.configure(state=state)
+        self.return_pick_button.configure(state=state)
 
     def _on_search(self) -> None:
         values = self._current_search_values()
@@ -271,6 +354,7 @@ class SearchTab(ttk.Frame):
             except FlightProviderError as exc:
                 self._finish_search_with_error("Flight API error", str(exc))
             except Exception as exc:
+                LOGGER.exception("Unexpected search error")
                 self._finish_search_with_error(
                     "Flight search error", f"Unexpected search error: {exc}"
                 )
@@ -282,6 +366,7 @@ class SearchTab(ttk.Frame):
     def _set_search_running(self, is_running: bool) -> None:
         self.search_button.configure(state="disabled" if is_running else "normal")
         self.save_button.configure(state="disabled")
+        self.open_button.configure(state="disabled")
         self.status_var.set("Searching..." if is_running else "")
 
     def _finish_search_success(
@@ -299,6 +384,7 @@ class SearchTab(ttk.Frame):
     def _show_search_error(self, title: str, message: str) -> None:
         self.search_button.configure(state="normal")
         self.save_button.configure(state="disabled")
+        self.open_button.configure(state="disabled")
         messagebox.showerror(title, message)
         self.status_var.set(message)
 
@@ -308,10 +394,14 @@ class SearchTab(ttk.Frame):
         for index, offer in enumerate(offers):
             self.results_table.insert("", "end", iid=str(index), values=format_offer_row(offer))
         self.save_button.configure(state="disabled")
+        self.open_button.configure(state="disabled")
 
     def _on_result_selected(self, _event: tk.Event | None = None) -> None:
-        state = "normal" if self.get_selected_offer() else "disabled"
-        self.save_button.configure(state=state)
+        offer = self.get_selected_offer()
+        self.save_button.configure(state="normal" if offer else "disabled")
+        self.open_button.configure(
+            state="normal" if offer and offer.booking_url else "disabled"
+        )
 
     def _on_save_selected(self) -> None:
         offer = self.get_selected_offer()
@@ -328,6 +418,15 @@ class SearchTab(ttk.Frame):
             self.status_var.set(str(exc))
             return
         self.status_var.set("Route saved.")
+
+    def _on_open_booking(self) -> None:
+        offer = self.get_selected_offer()
+        if offer is None or not offer.booking_url:
+            self.status_var.set("No booking link available.")
+            return
+        webbrowser.open(offer.booking_url)
+        LOGGER.info("Opened booking link for %s to %s", offer.origin, offer.destination)
+        self.status_var.set("Booking link opened.")
 
     def get_selected_offer(self) -> FlightOffer | None:
         selection = self.results_table.selection()
@@ -461,6 +560,7 @@ class TrackingTab(ttk.Frame):
             except TrackingError as exc:
                 self._finish_check_with_error(str(exc))
             except Exception as exc:
+                LOGGER.exception("Unexpected tracking error")
                 self._finish_check_with_error(f"Unexpected tracking error: {exc}")
             else:
                 self.after(0, lambda: self._finish_check_success(entry))
@@ -510,6 +610,7 @@ class TrackingTab(ttk.Frame):
             try:
                 results = self.automatic_tracking_service.run_due_checks()
             except Exception as exc:
+                LOGGER.exception("Unexpected automatic tracking error")
                 self._finish_check_with_error(
                     f"Unexpected automatic tracking error: {exc}"
                 )
@@ -600,6 +701,9 @@ class PriceGraphTab(ttk.Frame):
         ttk.Button(controls, text="Plot Price History", command=self._plot).grid(
             row=0, column=2
         )
+        ttk.Button(controls, text="Export CSV", command=self._export_csv).grid(
+            row=0, column=3, padx=(8, 0)
+        )
 
         self.plot_container = ttk.Frame(self)
         self.plot_container.grid(row=1, column=0, sticky="nsew")
@@ -630,6 +734,26 @@ class PriceGraphTab(ttk.Frame):
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
         self.status_var.set("Price history plotted.")
+
+    def _export_csv(self) -> None:
+        route = self.route_options.get(self.route_var.get())
+        if route is None or route.id is None:
+            self.status_var.set("Select a tracked route first.")
+            return
+        output_path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=(("CSV files", "*.csv"), ("All files", "*.*")),
+            initialfile=f"{route.origin}_{route.destination}_price_history.csv",
+        )
+        if not output_path:
+            return
+        export_price_history_to_csv(
+            self.tracking_service.database,
+            route.id,
+            output_path,
+        )
+        LOGGER.info("Exported price history for route %s to %s", route.id, output_path)
+        self.status_var.set("Price history exported.")
 
     @staticmethod
     def _route_label(status: TrackedRouteStatus) -> str:
@@ -698,6 +822,7 @@ class FlightSearchApp(tk.Tk):
         self.tracking_tab.tracking_service.add_route_from_search(search_values, offer)
         self.tracking_tab.refresh()
         self.price_graph_tab.refresh_routes()
+
 
 def run_app() -> None:
     app = FlightSearchApp()
