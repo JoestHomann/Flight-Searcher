@@ -7,7 +7,10 @@ from collections.abc import Callable
 from pathlib import Path
 from tkinter import messagebox, ttk
 
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
 from flight_api import MockFlightProvider
+from plotting.price_plot import create_price_history_figure
 from services import (
     SearchService,
     SearchValidationError,
@@ -18,6 +21,7 @@ from services import (
 from storage import (
     FlightOffer,
     PriceHistoryEntry,
+    TrackedRoute,
     initialize_database,
 )
 
@@ -286,9 +290,11 @@ class TrackingTab(ttk.Frame):
         self,
         parent: tk.Widget,
         tracking_service: TrackingService,
+        on_routes_changed: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent, padding=12)
         self.tracking_service = tracking_service
+        self.on_routes_changed = on_routes_changed
         self.status_var = tk.StringVar()
         self._build()
         self.refresh()
@@ -357,6 +363,7 @@ class TrackingTab(ttk.Frame):
             self.status_var.set(str(exc))
             return
         self.refresh()
+        self._notify_routes_changed()
         self.status_var.set(format_price_history_message(entry))
 
     def _remove_route(self) -> None:
@@ -365,7 +372,84 @@ class TrackingTab(ttk.Frame):
             return
         self.tracking_service.remove_route(route_id)
         self.refresh()
+        self._notify_routes_changed()
         self.status_var.set("Route removed.")
+
+    def _notify_routes_changed(self) -> None:
+        if self.on_routes_changed:
+            self.on_routes_changed()
+
+
+class PriceGraphTab(ttk.Frame):
+    def __init__(
+        self,
+        parent: tk.Widget,
+        tracking_service: TrackingService,
+    ) -> None:
+        super().__init__(parent, padding=12)
+        self.tracking_service = tracking_service
+        self.route_var = tk.StringVar()
+        self.status_var = tk.StringVar()
+        self.route_options: dict[str, TrackedRoute] = {}
+        self.canvas: FigureCanvasTkAgg | None = None
+        self._build()
+        self.refresh_routes()
+
+    def _build(self) -> None:
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
+
+        controls = ttk.Frame(self)
+        controls.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        controls.columnconfigure(0, weight=1)
+
+        self.route_selector = ttk.Combobox(
+            controls,
+            textvariable=self.route_var,
+            state="readonly",
+        )
+        self.route_selector.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        ttk.Button(controls, text="Refresh", command=self.refresh_routes).grid(
+            row=0, column=1, padx=(0, 8)
+        )
+        ttk.Button(controls, text="Plot Price History", command=self._plot).grid(
+            row=0, column=2
+        )
+
+        self.plot_container = ttk.Frame(self)
+        self.plot_container.grid(row=1, column=0, sticky="nsew")
+        ttk.Label(self, textvariable=self.status_var).grid(
+            row=2, column=0, sticky="w", pady=(10, 0)
+        )
+
+    def refresh_routes(self) -> None:
+        statuses = self.tracking_service.list_route_statuses()
+        self.route_options = {
+            self._route_label(status): status.route for status in statuses
+        }
+        labels = list(self.route_options)
+        self.route_selector.configure(values=labels)
+        if self.route_var.get() not in self.route_options:
+            self.route_var.set(labels[0] if labels else "")
+
+    def _plot(self) -> None:
+        route = self.route_options.get(self.route_var.get())
+        if route is None:
+            self.status_var.set("Select a tracked route first.")
+            return
+
+        figure = create_price_history_figure(self.tracking_service.database, route)
+        if self.canvas is not None:
+            self.canvas.get_tk_widget().destroy()
+        self.canvas = FigureCanvasTkAgg(figure, master=self.plot_container)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        self.status_var.set("Price history plotted.")
+
+    @staticmethod
+    def _route_label(status: TrackedRouteStatus) -> str:
+        route = status.route
+        return f"{route.id}: {route.origin} -> {route.destination} ({route.departure_date})"
 
 
 class FlightSearchApp(tk.Tk):
@@ -383,15 +467,19 @@ class FlightSearchApp(tk.Tk):
         notebook.pack(fill="both", expand=True)
 
         self.search_tab = SearchTab(notebook, search_service, self._save_route)
-        self.tracking_tab = TrackingTab(notebook, tracking_service)
+        self.price_graph_tab = PriceGraphTab(notebook, tracking_service)
+        self.tracking_tab = TrackingTab(
+            notebook, tracking_service, self.price_graph_tab.refresh_routes
+        )
         notebook.add(self.search_tab, text="Search")
         notebook.add(self.tracking_tab, text="Tracking")
-        notebook.add(self._simple_tab(notebook, "Price Graph"), text="Price Graph")
+        notebook.add(self.price_graph_tab, text="Price Graph")
         notebook.add(self._simple_tab(notebook, "Settings"), text="Settings")
 
     def _save_route(self, search_values: dict[str, str], offer: FlightOffer) -> None:
         self.tracking_tab.tracking_service.add_route_from_search(search_values, offer)
         self.tracking_tab.refresh()
+        self.price_graph_tab.refresh_routes()
 
     @staticmethod
     def _simple_tab(parent: tk.Widget, label: str) -> ttk.Frame:
