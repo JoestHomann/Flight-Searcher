@@ -115,10 +115,13 @@ def test_settings_display_rows_hides_secret_values():
         database_path=Path("storage/flight_search.db"),
         amadeus_base_url="https://test.api.amadeus.com",
         request_timeout_seconds=20,
+        serpapi_api_key="serp-key",
+        serpapi_base_url="https://serpapi.com/search",
     )
 
     rows = dict(settings_display_rows(config))
 
     assert rows["Flight API Provider"] == "amadeus"
     assert rows["Amadeus Credentials"] == "Configured"
+    assert rows["SerpApi Credentials"] == "Configured"
     assert "client-secret" not in rows.values()

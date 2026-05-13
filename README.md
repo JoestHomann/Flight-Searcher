@@ -37,7 +37,16 @@ AMADEUS_CLIENT_ID=your_client_id
 AMADEUS_CLIENT_SECRET=your_client_secret
 ```
 
+Use Google Flights data through SerpApi:
+
+```text
+FLIGHT_API_PROVIDER=serpapi_google_flights
+SERPAPI_API_KEY=your_serpapi_key
+```
+
 The app reads default currency, default origin, database path, provider choice, and Amadeus credentials from environment variables or `.env`.
+
+Provider changes can also be saved from the Settings tab. Restart the app after changing providers so the active search service is rebuilt.
 
 ## Features
 

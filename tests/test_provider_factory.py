@@ -1,7 +1,7 @@
 import pytest
 
 from config import AppConfig
-from flight_api import AmadeusProvider, MockFlightProvider
+from flight_api import AmadeusProvider, MockFlightProvider, SerpApiGoogleFlightsProvider
 from flight_api.provider_factory import create_flight_provider
 
 
@@ -15,6 +15,8 @@ def make_config(provider):
         database_path="storage/flight_search.db",
         amadeus_base_url="https://example.test",
         request_timeout_seconds=20,
+        serpapi_api_key="serp-key",
+        serpapi_base_url="https://serpapi.test/search",
     )
 
 
@@ -24,6 +26,20 @@ def test_provider_factory_creates_mock_provider():
 
 def test_provider_factory_creates_amadeus_provider():
     assert isinstance(create_flight_provider(make_config("amadeus")), AmadeusProvider)
+
+
+def test_provider_factory_creates_serpapi_google_flights_provider():
+    assert isinstance(
+        create_flight_provider(make_config("serpapi_google_flights")),
+        SerpApiGoogleFlightsProvider,
+    )
+
+
+def test_provider_factory_accepts_google_flights_alias():
+    assert isinstance(
+        create_flight_provider(make_config("google_flights")),
+        SerpApiGoogleFlightsProvider,
+    )
 
 
 def test_provider_factory_rejects_unknown_provider():

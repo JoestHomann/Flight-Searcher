@@ -12,9 +12,9 @@ from tkinter import filedialog, messagebox, ttk
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-from config import AppConfig, load_config
+from config import AppConfig, load_config, save_env_setting
 from flight_api import FlightProviderError
-from flight_api.provider_factory import create_flight_provider
+from flight_api.provider_factory import SUPPORTED_PROVIDERS, create_flight_provider
 from plotting.price_plot import create_price_history_figure
 from services import (
     AutomaticCheckResult,
@@ -67,10 +67,12 @@ TRACKING_COLUMNS = (
 SETTINGS_ROWS = (
     ("Flight API Provider", "flight_api_provider"),
     ("Amadeus Credentials", "amadeus_credentials"),
+    ("SerpApi Credentials", "serpapi_credentials"),
     ("Default Currency", "default_currency"),
     ("Default Origin", "default_origin"),
     ("Database Path", "database_path"),
     ("Amadeus Base URL", "amadeus_base_url"),
+    ("SerpApi Base URL", "serpapi_base_url"),
 )
 
 
@@ -121,10 +123,14 @@ def settings_display_rows(config: AppConfig) -> list[tuple[str, str]]:
         "amadeus_credentials": (
             "Configured" if config.amadeus_credentials_configured else "Missing"
         ),
+        "serpapi_credentials": (
+            "Configured" if config.serpapi_credentials_configured else "Missing"
+        ),
         "default_currency": config.default_currency,
         "default_origin": config.default_origin or "Not set",
         "database_path": str(config.database_path),
         "amadeus_base_url": config.amadeus_base_url,
+        "serpapi_base_url": config.serpapi_base_url,
     }
     return [(label, values[key]) for label, key in SETTINGS_ROWS]
 
@@ -765,6 +771,8 @@ class SettingsTab(ttk.Frame):
     def __init__(self, parent: tk.Widget, config: AppConfig) -> None:
         super().__init__(parent, padding=12)
         self.config = config
+        self.provider_var = tk.StringVar(value=config.flight_api_provider)
+        self.status_var = tk.StringVar()
         self._build()
 
     def _build(self) -> None:
@@ -775,10 +783,35 @@ class SettingsTab(ttk.Frame):
             ttk.Label(self, text=value).grid(
                 row=row_index, column=1, sticky="w", pady=4
             )
+        provider_row = len(SETTINGS_ROWS)
+        ttk.Label(self, text="Change Provider").grid(
+            row=provider_row, column=0, sticky="w", padx=(0, 12), pady=(16, 4)
+        )
+        ttk.Combobox(
+            self,
+            textvariable=self.provider_var,
+            values=SUPPORTED_PROVIDERS,
+            state="readonly",
+            width=28,
+        ).grid(row=provider_row, column=1, sticky="w", pady=(16, 4))
+        ttk.Button(
+            self,
+            text="Save Provider",
+            command=self._save_provider,
+        ).grid(row=provider_row, column=2, sticky="w", padx=(12, 0), pady=(16, 4))
+        ttk.Label(self, textvariable=self.status_var).grid(
+            row=provider_row + 1, column=0, columnspan=3, sticky="w", pady=(4, 0)
+        )
         ttk.Label(
             self,
             text="API credentials are loaded from environment variables or a local .env file.",
-        ).grid(row=len(SETTINGS_ROWS), column=0, columnspan=2, sticky="w", pady=(16, 0))
+        ).grid(row=provider_row + 2, column=0, columnspan=3, sticky="w", pady=(16, 0))
+
+    def _save_provider(self) -> None:
+        provider = self.provider_var.get()
+        save_env_setting("FLIGHT_API_PROVIDER", provider)
+        self.status_var.set("Provider saved. Restart the app to use it.")
+        LOGGER.info("Saved flight provider setting: %s", provider)
 
 
 class FlightSearchApp(tk.Tk):

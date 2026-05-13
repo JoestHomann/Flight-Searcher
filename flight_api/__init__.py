@@ -9,6 +9,7 @@ from .base_provider import ProviderNetworkError
 from .base_provider import ProviderRateLimitError
 from .base_provider import ProviderResponseError
 from .mock_provider import MockFlightProvider
+from .serpapi_provider import SerpApiGoogleFlightsProvider
 
 __all__ = [
     "AmadeusProvider",
@@ -20,4 +21,5 @@ __all__ = [
     "ProviderNetworkError",
     "ProviderRateLimitError",
     "ProviderResponseError",
+    "SerpApiGoogleFlightsProvider",
 ]
