@@ -44,6 +44,8 @@ class TrackedRoute:
     created_at: datetime
     last_checked_at: datetime | None
     check_interval_hours: int | None = None
+    notification_enabled: bool = True
+    last_notified_at: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -53,6 +55,9 @@ class TrackedRoute:
         data["created_at"] = self.created_at.isoformat()
         data["last_checked_at"] = (
             self.last_checked_at.isoformat() if self.last_checked_at else None
+        )
+        data["last_notified_at"] = (
+            self.last_notified_at.isoformat() if self.last_notified_at else None
         )
         return data
 

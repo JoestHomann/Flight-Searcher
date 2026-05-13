@@ -77,6 +77,7 @@ def test_format_route_status_row_matches_tracking_table_columns():
         "",
         "150.00 EUR",
         "Manual only",
+        "On",
         "2026-05-13 12:30",
         "89.99 EUR",
         "79.99 EUR",

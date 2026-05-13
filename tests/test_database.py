@@ -95,6 +95,34 @@ def test_update_tracked_route_check_interval(tmp_path):
     assert database.get_tracked_route(route.id).check_interval_hours == 6
 
 
+def test_update_tracked_route_notification_fields(tmp_path):
+    database = FlightSearchDatabase(tmp_path / "flight_search.db")
+    database.initialize()
+    route = database.add_tracked_route(
+        TrackedRoute(
+            id=None,
+            origin="STR",
+            destination="LIS",
+            departure_date=date(2026, 7, 10),
+            return_date=None,
+            is_round_trip=False,
+            max_price=Decimal("160.00"),
+            currency="EUR",
+            active=True,
+            created_at=datetime(2026, 5, 13, 12, 0),
+            last_checked_at=None,
+        )
+    )
+    notified_at = datetime(2026, 5, 13, 12, 30)
+
+    database.update_tracked_route_notification_enabled(route.id, False)
+    database.update_tracked_route_last_notified(route.id, notified_at)
+    updated_route = database.get_tracked_route(route.id)
+
+    assert updated_route.notification_enabled is False
+    assert updated_route.last_notified_at == notified_at
+
+
 def test_add_and_load_price_history(tmp_path):
     database = FlightSearchDatabase(tmp_path / "flight_search.db")
     database.initialize()

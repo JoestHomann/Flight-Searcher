@@ -31,7 +31,9 @@ class FlightSearchDatabase:
                     active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     last_checked_at TEXT,
-                    check_interval_hours INTEGER
+                    check_interval_hours INTEGER,
+                    notification_enabled INTEGER NOT NULL DEFAULT 1,
+                    last_notified_at TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS price_history (
@@ -70,9 +72,11 @@ class FlightSearchDatabase:
                     active,
                     created_at,
                     last_checked_at,
-                    check_interval_hours
+                    check_interval_hours,
+                    notification_enabled,
+                    last_notified_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     route.origin,
@@ -86,6 +90,8 @@ class FlightSearchDatabase:
                     route.created_at.isoformat(),
                     route.last_checked_at.isoformat() if route.last_checked_at else None,
                     route.check_interval_hours,
+                    int(route.notification_enabled),
+                    route.last_notified_at.isoformat() if route.last_notified_at else None,
                 ),
             )
             route_id = int(cursor.lastrowid)
@@ -102,6 +108,8 @@ class FlightSearchDatabase:
             created_at=route.created_at,
             last_checked_at=route.last_checked_at,
             check_interval_hours=route.check_interval_hours,
+            notification_enabled=route.notification_enabled,
+            last_notified_at=route.last_notified_at,
         )
 
     def remove_tracked_route(self, route_id: int) -> None:
@@ -148,6 +156,32 @@ class FlightSearchDatabase:
                 WHERE id = ?
                 """,
                 (check_interval_hours, route_id),
+            )
+
+    def update_tracked_route_notification_enabled(
+        self, route_id: int, enabled: bool
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE tracked_routes
+                SET notification_enabled = ?
+                WHERE id = ?
+                """,
+                (int(enabled), route_id),
+            )
+
+    def update_tracked_route_last_notified(
+        self, route_id: int, notified_at: datetime
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE tracked_routes
+                SET last_notified_at = ?
+                WHERE id = ?
+                """,
+                (notified_at.isoformat(), route_id),
             )
 
     def add_price_history_entry(
@@ -230,6 +264,14 @@ class FlightSearchDatabase:
             connection.execute(
                 "ALTER TABLE tracked_routes ADD COLUMN check_interval_hours INTEGER"
             )
+        if "notification_enabled" not in columns:
+            connection.execute(
+                "ALTER TABLE tracked_routes ADD COLUMN notification_enabled INTEGER NOT NULL DEFAULT 1"
+            )
+        if "last_notified_at" not in columns:
+            connection.execute(
+                "ALTER TABLE tracked_routes ADD COLUMN last_notified_at TEXT"
+            )
 
     @staticmethod
     def _tracked_route_from_row(row: sqlite3.Row) -> TrackedRoute:
@@ -252,6 +294,12 @@ class FlightSearchDatabase:
                 else None
             ),
             check_interval_hours=row["check_interval_hours"],
+            notification_enabled=bool(row["notification_enabled"]),
+            last_notified_at=(
+                datetime.fromisoformat(row["last_notified_at"])
+                if row["last_notified_at"]
+                else None
+            ),
         )
 
     @staticmethod

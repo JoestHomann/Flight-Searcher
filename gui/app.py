@@ -17,6 +17,7 @@ from services import (
     AutomaticCheckResult,
     AutomaticTrackingService,
     CHECK_INTERVAL_OPTIONS,
+    NotificationService,
     SearchService,
     SearchValidationError,
     TrackingError,
@@ -50,6 +51,7 @@ TRACKING_COLUMNS = (
     ("return", "Return", 110),
     ("target", "Target", 100),
     ("interval", "Interval", 120),
+    ("alerts", "Alerts", 80),
     ("last_checked", "Last Checked", 150),
     ("current", "Current", 100),
     ("lowest", "Lowest", 100),
@@ -93,6 +95,7 @@ def format_route_status_row(status: TrackedRouteStatus) -> tuple[str, ...]:
         route.return_date.isoformat() if route.return_date else "",
         target,
         AutomaticTrackingService.interval_label(route.check_interval_hours),
+        "On" if route.notification_enabled else "Off",
         route.last_checked_at.strftime("%Y-%m-%d %H:%M")
         if route.last_checked_at
         else "",
@@ -353,13 +356,16 @@ class TrackingTab(ttk.Frame):
         parent: tk.Widget,
         tracking_service: TrackingService,
         automatic_tracking_service: AutomaticTrackingService,
+        notification_service: NotificationService,
         on_routes_changed: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent, padding=12)
         self.tracking_service = tracking_service
         self.automatic_tracking_service = automatic_tracking_service
+        self.notification_service = notification_service
         self.on_routes_changed = on_routes_changed
         self.interval_var = tk.StringVar(value="Manual only")
+        self.notification_enabled_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar()
         self._build()
         self.refresh()
@@ -413,8 +419,18 @@ class TrackingTab(ttk.Frame):
         ttk.Button(actions, text="Apply Interval", command=self._apply_interval).grid(
             row=0, column=5, padx=(8, 0)
         )
+        ttk.Checkbutton(
+            actions,
+            text="Notify below target",
+            variable=self.notification_enabled_var,
+        ).grid(row=0, column=6, padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Apply Alert",
+            command=self._apply_notification_setting,
+        ).grid(row=0, column=7, padx=(8, 0))
         ttk.Button(actions, text="Run Due Checks", command=self._run_due_checks).grid(
-            row=0, column=6, padx=(8, 0)
+            row=0, column=8, padx=(8, 0)
         )
 
     def refresh(self) -> None:
@@ -476,6 +492,17 @@ class TrackingTab(ttk.Frame):
         self._notify_routes_changed()
         self.status_var.set("Tracking interval updated.")
 
+    def _apply_notification_setting(self) -> None:
+        route_id = self._selected_route_id()
+        if route_id is None:
+            return
+        self.notification_service.set_route_notifications_enabled(
+            route_id, self.notification_enabled_var.get()
+        )
+        self.refresh()
+        self._notify_routes_changed()
+        self.status_var.set("Notification setting updated.")
+
     def _run_due_checks(self) -> None:
         self._set_check_running(True)
 
@@ -505,6 +532,7 @@ class TrackingTab(ttk.Frame):
         self._set_check_running(False)
         self.refresh()
         self._notify_routes_changed()
+        self._show_notification_for_entry(entry)
         self.status_var.set(format_price_history_message(entry))
 
     def _finish_check_with_error(self, message: str) -> None:
@@ -519,6 +547,9 @@ class TrackingTab(ttk.Frame):
         self._set_check_running(False)
         self.refresh()
         self._notify_routes_changed()
+        for result in results:
+            if result.entry is not None:
+                self._show_notification_for_entry(result.entry)
         checked_count = sum(1 for result in results if result.entry is not None)
         error_count = sum(1 for result in results if result.error)
         if error_count:
@@ -527,6 +558,11 @@ class TrackingTab(ttk.Frame):
             )
         else:
             self.status_var.set(f"{checked_count} due route(s) checked.")
+
+    def _show_notification_for_entry(self, entry: PriceHistoryEntry) -> None:
+        notification = self.notification_service.notification_for_entry(entry)
+        if notification is not None:
+            messagebox.showinfo("Target price reached", notification.message)
 
 
 class PriceGraphTab(ttk.Frame):
@@ -633,6 +669,7 @@ class FlightSearchApp(tk.Tk):
         search_service = SearchService(create_flight_provider(self.config))
         tracking_service = TrackingService(database, search_service)
         automatic_tracking_service = AutomaticTrackingService(tracking_service)
+        notification_service = NotificationService(database)
 
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True)
@@ -649,6 +686,7 @@ class FlightSearchApp(tk.Tk):
             notebook,
             tracking_service,
             automatic_tracking_service,
+            notification_service,
             self.price_graph_tab.refresh_routes,
         )
         notebook.add(self.search_tab, text="Search")
