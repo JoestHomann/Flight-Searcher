@@ -133,9 +133,9 @@ Required fields:
 
 ## Phase 4 - Mock Flight API Provider
 
-[ ] Create flight_api/base_provider.py.
+[x] Create flight_api/base_provider.py.
 
-[ ] Define common provider interface:
+[x] Define common provider interface:
 
     search_flights(
         origin,
@@ -146,17 +146,17 @@ Required fields:
         currency
     )
 
-[ ] Create flight_api/mock_provider.py.
+[x] Create flight_api/mock_provider.py.
 
-[ ] Return realistic fake flight data.
+[x] Return realistic fake flight data.
 
-[ ] Make sure mock data includes:
-    [ ] Several prices
-    [ ] Several airlines
-    [ ] Direct and indirect flights
-    [ ] Different departure times
+[x] Make sure mock data includes:
+    [x] Several prices
+    [x] Several airlines
+    [x] Direct and indirect flights
+    [x] Different departure times
 
-[ ] Use mock provider in the GUI during early development.
+[x] Use mock provider in the GUI during early development.
 
 ---
 
