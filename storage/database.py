@@ -30,7 +30,8 @@ class FlightSearchDatabase:
                     currency TEXT NOT NULL,
                     active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
-                    last_checked_at TEXT
+                    last_checked_at TEXT,
+                    check_interval_hours INTEGER
                 );
 
                 CREATE TABLE IF NOT EXISTS price_history (
@@ -52,6 +53,7 @@ class FlightSearchDatabase:
                 );
                 """
             )
+            self._migrate_schema(connection)
 
     def add_tracked_route(self, route: TrackedRoute) -> TrackedRoute:
         with self._connect() as connection:
@@ -67,9 +69,10 @@ class FlightSearchDatabase:
                     currency,
                     active,
                     created_at,
-                    last_checked_at
+                    last_checked_at,
+                    check_interval_hours
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     route.origin,
@@ -82,6 +85,7 @@ class FlightSearchDatabase:
                     int(route.active),
                     route.created_at.isoformat(),
                     route.last_checked_at.isoformat() if route.last_checked_at else None,
+                    route.check_interval_hours,
                 ),
             )
             route_id = int(cursor.lastrowid)
@@ -97,6 +101,7 @@ class FlightSearchDatabase:
             active=route.active,
             created_at=route.created_at,
             last_checked_at=route.last_checked_at,
+            check_interval_hours=route.check_interval_hours,
         )
 
     def remove_tracked_route(self, route_id: int) -> None:
@@ -130,6 +135,19 @@ class FlightSearchDatabase:
                 WHERE id = ?
                 """,
                 (checked_at.isoformat(), route_id),
+            )
+
+    def update_tracked_route_check_interval(
+        self, route_id: int, check_interval_hours: int | None
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE tracked_routes
+                SET check_interval_hours = ?
+                WHERE id = ?
+                """,
+                (check_interval_hours, route_id),
             )
 
     def add_price_history_entry(
@@ -203,6 +221,17 @@ class FlightSearchDatabase:
         return connection
 
     @staticmethod
+    def _migrate_schema(connection: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(tracked_routes)").fetchall()
+        }
+        if "check_interval_hours" not in columns:
+            connection.execute(
+                "ALTER TABLE tracked_routes ADD COLUMN check_interval_hours INTEGER"
+            )
+
+    @staticmethod
     def _tracked_route_from_row(row: sqlite3.Row) -> TrackedRoute:
         return TrackedRoute(
             id=row["id"],
@@ -222,6 +251,7 @@ class FlightSearchDatabase:
                 if row["last_checked_at"]
                 else None
             ),
+            check_interval_hours=row["check_interval_hours"],
         )
 
     @staticmethod

@@ -43,6 +43,7 @@ class TrackedRoute:
     active: bool
     created_at: datetime
     last_checked_at: datetime | None
+    check_interval_hours: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

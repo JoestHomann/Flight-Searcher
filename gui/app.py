@@ -14,6 +14,9 @@ from flight_api import FlightProviderError
 from flight_api.provider_factory import create_flight_provider
 from plotting.price_plot import create_price_history_figure
 from services import (
+    AutomaticCheckResult,
+    AutomaticTrackingService,
+    CHECK_INTERVAL_OPTIONS,
     SearchService,
     SearchValidationError,
     TrackingError,
@@ -46,6 +49,7 @@ TRACKING_COLUMNS = (
     ("departure", "Departure", 110),
     ("return", "Return", 110),
     ("target", "Target", 100),
+    ("interval", "Interval", 120),
     ("last_checked", "Last Checked", 150),
     ("current", "Current", 100),
     ("lowest", "Lowest", 100),
@@ -88,6 +92,7 @@ def format_route_status_row(status: TrackedRouteStatus) -> tuple[str, ...]:
         route.departure_date.isoformat(),
         route.return_date.isoformat() if route.return_date else "",
         target,
+        AutomaticTrackingService.interval_label(route.check_interval_hours),
         route.last_checked_at.strftime("%Y-%m-%d %H:%M")
         if route.last_checked_at
         else "",
@@ -347,11 +352,14 @@ class TrackingTab(ttk.Frame):
         self,
         parent: tk.Widget,
         tracking_service: TrackingService,
+        automatic_tracking_service: AutomaticTrackingService,
         on_routes_changed: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent, padding=12)
         self.tracking_service = tracking_service
+        self.automatic_tracking_service = automatic_tracking_service
         self.on_routes_changed = on_routes_changed
+        self.interval_var = tk.StringVar(value="Manual only")
         self.status_var = tk.StringVar()
         self._build()
         self.refresh()
@@ -394,6 +402,20 @@ class TrackingTab(ttk.Frame):
             actions, text="Remove", command=self._remove_route
         )
         self.remove_button.grid(row=0, column=3, padx=(8, 0))
+        self.interval_selector = ttk.Combobox(
+            actions,
+            textvariable=self.interval_var,
+            values=tuple(CHECK_INTERVAL_OPTIONS),
+            width=16,
+            state="readonly",
+        )
+        self.interval_selector.grid(row=0, column=4, padx=(8, 0))
+        ttk.Button(actions, text="Apply Interval", command=self._apply_interval).grid(
+            row=0, column=5, padx=(8, 0)
+        )
+        ttk.Button(actions, text="Run Due Checks", command=self._run_due_checks).grid(
+            row=0, column=6, padx=(8, 0)
+        )
 
     def refresh(self) -> None:
         for item_id in self.routes_table.get_children():
@@ -438,6 +460,37 @@ class TrackingTab(ttk.Frame):
         self._notify_routes_changed()
         self.status_var.set("Route removed.")
 
+    def _apply_interval(self) -> None:
+        route_id = self._selected_route_id()
+        if route_id is None:
+            return
+        try:
+            self.automatic_tracking_service.set_route_interval(
+                route_id, self.interval_var.get()
+            )
+        except TrackingError as exc:
+            messagebox.showerror("Tracking error", str(exc))
+            self.status_var.set(str(exc))
+            return
+        self.refresh()
+        self._notify_routes_changed()
+        self.status_var.set("Tracking interval updated.")
+
+    def _run_due_checks(self) -> None:
+        self._set_check_running(True)
+
+        def due_check_worker() -> None:
+            try:
+                results = self.automatic_tracking_service.run_due_checks()
+            except Exception as exc:
+                self._finish_check_with_error(
+                    f"Unexpected automatic tracking error: {exc}"
+                )
+            else:
+                self.after(0, lambda: self._finish_due_checks(results))
+
+        threading.Thread(target=due_check_worker, daemon=True).start()
+
     def _notify_routes_changed(self) -> None:
         if self.on_routes_changed:
             self.on_routes_changed()
@@ -461,6 +514,19 @@ class TrackingTab(ttk.Frame):
         self._set_check_running(False)
         messagebox.showerror("Tracking error", message)
         self.status_var.set(message)
+
+    def _finish_due_checks(self, results: list[AutomaticCheckResult]) -> None:
+        self._set_check_running(False)
+        self.refresh()
+        self._notify_routes_changed()
+        checked_count = sum(1 for result in results if result.entry is not None)
+        error_count = sum(1 for result in results if result.error)
+        if error_count:
+            self.status_var.set(
+                f"{checked_count} route(s) checked, {error_count} error(s)."
+            )
+        else:
+            self.status_var.set(f"{checked_count} due route(s) checked.")
 
 
 class PriceGraphTab(ttk.Frame):
@@ -566,6 +632,7 @@ class FlightSearchApp(tk.Tk):
         database = initialize_database(self.config.database_path)
         search_service = SearchService(create_flight_provider(self.config))
         tracking_service = TrackingService(database, search_service)
+        automatic_tracking_service = AutomaticTrackingService(tracking_service)
 
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True)
@@ -579,7 +646,10 @@ class FlightSearchApp(tk.Tk):
         )
         self.price_graph_tab = PriceGraphTab(notebook, tracking_service)
         self.tracking_tab = TrackingTab(
-            notebook, tracking_service, self.price_graph_tab.refresh_routes
+            notebook,
+            tracking_service,
+            automatic_tracking_service,
+            self.price_graph_tab.refresh_routes,
         )
         notebook.add(self.search_tab, text="Search")
         notebook.add(self.tracking_tab, text="Tracking")
