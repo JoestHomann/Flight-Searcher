@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
+from flight_api import FlightProviderError
 from services.search_service import SearchService
 from storage import FlightOffer, FlightSearchDatabase, PriceHistoryEntry, TrackedRoute
 
@@ -79,15 +80,18 @@ class TrackingService:
         if route is None:
             raise TrackingError("Tracked route was not found.")
 
-        offers = self.search_service.search(
-            origin=route.origin,
-            destination=route.destination,
-            departure_date=route.departure_date,
-            return_date=route.return_date,
-            is_round_trip=route.is_round_trip,
-            max_price=None,
-            currency=route.currency,
-        )
+        try:
+            offers = self.search_service.search(
+                origin=route.origin,
+                destination=route.destination,
+                departure_date=route.departure_date,
+                return_date=route.return_date,
+                is_round_trip=route.is_round_trip,
+                max_price=None,
+                currency=route.currency,
+            )
+        except FlightProviderError as exc:
+            raise TrackingError(str(exc)) from exc
         if not offers:
             raise TrackingError("No flights found for this tracked route.")
 

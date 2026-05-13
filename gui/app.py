@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import tkinter as tk
+import threading
 from collections.abc import Callable
-from pathlib import Path
 from tkinter import messagebox, ttk
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-from flight_api import MockFlightProvider
+from config import AppConfig, load_config
+from flight_api import FlightProviderError
+from flight_api.provider_factory import create_flight_provider
 from plotting.price_plot import create_price_history_figure
 from services import (
     SearchService,
@@ -47,6 +49,15 @@ TRACKING_COLUMNS = (
     ("last_checked", "Last Checked", 150),
     ("current", "Current", 100),
     ("lowest", "Lowest", 100),
+)
+
+SETTINGS_ROWS = (
+    ("Flight API Provider", "flight_api_provider"),
+    ("Amadeus Credentials", "amadeus_credentials"),
+    ("Default Currency", "default_currency"),
+    ("Default Origin", "default_origin"),
+    ("Database Path", "database_path"),
+    ("Amadeus Base URL", "amadeus_base_url"),
 )
 
 
@@ -89,11 +100,27 @@ def format_price_history_message(entry: PriceHistoryEntry) -> str:
     return f"Current cheapest: {entry.price:.2f} {entry.currency} ({entry.airline})"
 
 
+def settings_display_rows(config: AppConfig) -> list[tuple[str, str]]:
+    values = {
+        "flight_api_provider": config.flight_api_provider,
+        "amadeus_credentials": (
+            "Configured" if config.amadeus_credentials_configured else "Missing"
+        ),
+        "default_currency": config.default_currency,
+        "default_origin": config.default_origin or "Not set",
+        "database_path": str(config.database_path),
+        "amadeus_base_url": config.amadeus_base_url,
+    }
+    return [(label, values[key]) for label, key in SETTINGS_ROWS]
+
+
 class SearchTab(ttk.Frame):
     def __init__(
         self,
         parent: tk.Widget,
         search_service: SearchService,
+        default_origin: str = "",
+        default_currency: str = "EUR",
         on_save_route: Callable[[dict[str, str], FlightOffer], None] | None = None,
     ) -> None:
         super().__init__(parent, padding=12)
@@ -102,13 +129,13 @@ class SearchTab(ttk.Frame):
         self.last_results: list[FlightOffer] = []
         self.last_search: dict[str, str] = {}
 
-        self.origin_var = tk.StringVar(value="STR")
+        self.origin_var = tk.StringVar(value=default_origin or "STR")
         self.destination_var = tk.StringVar(value="LIS")
         self.departure_date_var = tk.StringVar(value="2026-07-10")
         self.return_date_var = tk.StringVar()
         self.trip_type_var = tk.StringVar(value="one_way")
         self.max_price_var = tk.StringVar(value="150")
-        self.currency_var = tk.StringVar(value="EUR")
+        self.currency_var = tk.StringVar(value=default_currency or "EUR")
         self.status_var = tk.StringVar()
 
         self._build()
@@ -175,9 +202,10 @@ class SearchTab(ttk.Frame):
             state="readonly",
         ).grid(row=1, column=6, sticky="ew", padx=(0, 8))
 
-        ttk.Button(controls, text="Search", command=self._on_search).grid(
-            row=1, column=7, sticky="ew"
+        self.search_button = ttk.Button(
+            controls, text="Search", command=self._on_search
         )
+        self.search_button.grid(row=1, column=7, sticky="ew")
 
         self.results_table = ttk.Treeview(
             self,
@@ -216,26 +244,55 @@ class SearchTab(ttk.Frame):
         self.return_entry.configure(state=state)
 
     def _on_search(self) -> None:
-        self.status_var.set("")
-        try:
-            offers = self.search_service.search(
-                origin=self.origin_var.get(),
-                destination=self.destination_var.get(),
-                departure_date=self.departure_date_var.get(),
-                return_date=self.return_date_var.get(),
-                is_round_trip=self.trip_type_var.get() == "round_trip",
-                max_price=self.max_price_var.get(),
-                currency=self.currency_var.get(),
-            )
-        except SearchValidationError as exc:
-            messagebox.showerror("Invalid search", str(exc))
-            self.status_var.set(str(exc))
-            return
+        values = self._current_search_values()
+        self._set_search_running(True)
 
+        def search_worker() -> None:
+            try:
+                offers = self.search_service.search(
+                    origin=values["origin"],
+                    destination=values["destination"],
+                    departure_date=values["departure_date"],
+                    return_date=values["return_date"],
+                    is_round_trip=values["is_round_trip"] == "True",
+                    max_price=values["max_price"],
+                    currency=values["currency"],
+                )
+            except SearchValidationError as exc:
+                self._finish_search_with_error("Invalid search", str(exc))
+            except FlightProviderError as exc:
+                self._finish_search_with_error("Flight API error", str(exc))
+            except Exception as exc:
+                self._finish_search_with_error(
+                    "Flight search error", f"Unexpected search error: {exc}"
+                )
+            else:
+                self.after(0, lambda: self._finish_search_success(offers, values))
+
+        threading.Thread(target=search_worker, daemon=True).start()
+
+    def _set_search_running(self, is_running: bool) -> None:
+        self.search_button.configure(state="disabled" if is_running else "normal")
+        self.save_button.configure(state="disabled")
+        self.status_var.set("Searching..." if is_running else "")
+
+    def _finish_search_success(
+        self, offers: list[FlightOffer], search_values: dict[str, str]
+    ) -> None:
         self.last_results = offers
-        self.last_search = self._current_search_values()
+        self.last_search = search_values
         self._populate_results(offers)
+        self.search_button.configure(state="normal")
         self.status_var.set(f"{len(offers)} result(s)")
+
+    def _finish_search_with_error(self, title: str, message: str) -> None:
+        self.after(0, lambda: self._show_search_error(title, message))
+
+    def _show_search_error(self, title: str, message: str) -> None:
+        self.search_button.configure(state="normal")
+        self.save_button.configure(state="disabled")
+        messagebox.showerror(title, message)
+        self.status_var.set(message)
 
     def _populate_results(self, offers: list[FlightOffer]) -> None:
         for item_id in self.results_table.get_children():
@@ -329,12 +386,14 @@ class TrackingTab(ttk.Frame):
         ttk.Button(actions, text="Refresh", command=self.refresh).grid(
             row=0, column=1, padx=(8, 0)
         )
-        ttk.Button(actions, text="Check Price Now", command=self._check_price).grid(
-            row=0, column=2, padx=(8, 0)
+        self.check_button = ttk.Button(
+            actions, text="Check Price Now", command=self._check_price
         )
-        ttk.Button(actions, text="Remove", command=self._remove_route).grid(
-            row=0, column=3, padx=(8, 0)
+        self.check_button.grid(row=0, column=2, padx=(8, 0))
+        self.remove_button = ttk.Button(
+            actions, text="Remove", command=self._remove_route
         )
+        self.remove_button.grid(row=0, column=3, padx=(8, 0))
 
     def refresh(self) -> None:
         for item_id in self.routes_table.get_children():
@@ -356,15 +415,19 @@ class TrackingTab(ttk.Frame):
         route_id = self._selected_route_id()
         if route_id is None:
             return
-        try:
-            entry = self.tracking_service.check_price_now(route_id)
-        except TrackingError as exc:
-            messagebox.showerror("Tracking error", str(exc))
-            self.status_var.set(str(exc))
-            return
-        self.refresh()
-        self._notify_routes_changed()
-        self.status_var.set(format_price_history_message(entry))
+        self._set_check_running(True)
+
+        def check_worker() -> None:
+            try:
+                entry = self.tracking_service.check_price_now(route_id)
+            except TrackingError as exc:
+                self._finish_check_with_error(str(exc))
+            except Exception as exc:
+                self._finish_check_with_error(f"Unexpected tracking error: {exc}")
+            else:
+                self.after(0, lambda: self._finish_check_success(entry))
+
+        threading.Thread(target=check_worker, daemon=True).start()
 
     def _remove_route(self) -> None:
         route_id = self._selected_route_id()
@@ -378,6 +441,26 @@ class TrackingTab(ttk.Frame):
     def _notify_routes_changed(self) -> None:
         if self.on_routes_changed:
             self.on_routes_changed()
+
+    def _set_check_running(self, is_running: bool) -> None:
+        state = "disabled" if is_running else "normal"
+        self.check_button.configure(state=state)
+        self.remove_button.configure(state=state)
+        self.status_var.set("Checking price..." if is_running else "")
+
+    def _finish_check_success(self, entry: PriceHistoryEntry) -> None:
+        self._set_check_running(False)
+        self.refresh()
+        self._notify_routes_changed()
+        self.status_var.set(format_price_history_message(entry))
+
+    def _finish_check_with_error(self, message: str) -> None:
+        self.after(0, lambda: self._show_check_error(message))
+
+    def _show_check_error(self, message: str) -> None:
+        self._set_check_running(False)
+        messagebox.showerror("Tracking error", message)
+        self.status_var.set(message)
 
 
 class PriceGraphTab(ttk.Frame):
@@ -452,21 +535,48 @@ class PriceGraphTab(ttk.Frame):
         return f"{route.id}: {route.origin} -> {route.destination} ({route.departure_date})"
 
 
+class SettingsTab(ttk.Frame):
+    def __init__(self, parent: tk.Widget, config: AppConfig) -> None:
+        super().__init__(parent, padding=12)
+        self.config = config
+        self._build()
+
+    def _build(self) -> None:
+        for row_index, (label, value) in enumerate(settings_display_rows(self.config)):
+            ttk.Label(self, text=label).grid(
+                row=row_index, column=0, sticky="w", padx=(0, 12), pady=4
+            )
+            ttk.Label(self, text=value).grid(
+                row=row_index, column=1, sticky="w", pady=4
+            )
+        ttk.Label(
+            self,
+            text="API credentials are loaded from environment variables or a local .env file.",
+        ).grid(row=len(SETTINGS_ROWS), column=0, columnspan=2, sticky="w", pady=(16, 0))
+
+
 class FlightSearchApp(tk.Tk):
-    def __init__(self) -> None:
+    def __init__(self, config: AppConfig | None = None) -> None:
         super().__init__()
         self.title("Flight Search")
         self.geometry("1080x640")
         self.minsize(900, 520)
 
-        database = initialize_database(Path("storage") / "flight_search.db")
-        search_service = SearchService(MockFlightProvider())
+        self.config = config or load_config()
+        database = initialize_database(self.config.database_path)
+        search_service = SearchService(create_flight_provider(self.config))
         tracking_service = TrackingService(database, search_service)
 
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True)
 
-        self.search_tab = SearchTab(notebook, search_service, self._save_route)
+        self.search_tab = SearchTab(
+            notebook,
+            search_service,
+            default_origin=self.config.default_origin,
+            default_currency=self.config.default_currency,
+            on_save_route=self._save_route,
+        )
         self.price_graph_tab = PriceGraphTab(notebook, tracking_service)
         self.tracking_tab = TrackingTab(
             notebook, tracking_service, self.price_graph_tab.refresh_routes
@@ -474,19 +584,12 @@ class FlightSearchApp(tk.Tk):
         notebook.add(self.search_tab, text="Search")
         notebook.add(self.tracking_tab, text="Tracking")
         notebook.add(self.price_graph_tab, text="Price Graph")
-        notebook.add(self._simple_tab(notebook, "Settings"), text="Settings")
+        notebook.add(SettingsTab(notebook, self.config), text="Settings")
 
     def _save_route(self, search_values: dict[str, str], offer: FlightOffer) -> None:
         self.tracking_tab.tracking_service.add_route_from_search(search_values, offer)
         self.tracking_tab.refresh()
         self.price_graph_tab.refresh_routes()
-
-    @staticmethod
-    def _simple_tab(parent: tk.Widget, label: str) -> ttk.Frame:
-        frame = ttk.Frame(parent, padding=12)
-        ttk.Label(frame, text=label).pack(anchor="nw")
-        return frame
-
 
 def run_app() -> None:
     app = FlightSearchApp()
