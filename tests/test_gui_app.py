@@ -4,6 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from config import AppConfig
+from flight_api.browser_assisted_provider import BrowserAssistedFlightProvider
 from gui.app import (
     RESULT_COLUMNS,
     TRACKING_COLUMNS,
@@ -45,6 +46,23 @@ def test_format_offer_row_matches_results_table_columns():
         "149.99",
         "EUR",
     )
+
+
+def test_format_offer_row_displays_browser_assisted_rows_as_site_links():
+    offer = BrowserAssistedFlightProvider(open_pages=False).search_flights(
+        origin="STR",
+        destination="LIS",
+        departure_date=date(2026, 7, 10),
+        return_date=None,
+        max_price=None,
+        currency="EUR",
+    )[0]
+
+    row = format_offer_row(offer)
+
+    assert row[0] == "Open Google Flights"
+    assert row[5] == "Manual check"
+    assert row[7] == "Open site"
 
 
 def test_format_route_status_row_matches_tracking_table_columns():

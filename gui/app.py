@@ -14,6 +14,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from config import AppConfig, load_config, save_env_setting
 from flight_api import FlightProviderError
+from flight_api.browser_assisted_provider import is_browser_assisted_offer
 from flight_api.provider_factory import SUPPORTED_PROVIDERS, create_flight_provider
 from plotting.price_plot import create_price_history_figure
 from services import (
@@ -77,6 +78,7 @@ SETTINGS_ROWS = (
 
 
 def format_offer_row(offer: FlightOffer) -> tuple[str, ...]:
+    price = "Open site" if is_browser_assisted_offer(offer) else f"{offer.price:.2f}"
     return (
         offer.airline,
         offer.origin,
@@ -85,7 +87,7 @@ def format_offer_row(offer: FlightOffer) -> tuple[str, ...]:
         offer.arrival_time.strftime("%Y-%m-%d %H:%M"),
         offer.duration,
         str(offer.number_of_stops),
-        f"{offer.price:.2f}",
+        price,
         offer.currency,
     )
 
@@ -404,15 +406,21 @@ class SearchTab(ttk.Frame):
 
     def _on_result_selected(self, _event: tk.Event | None = None) -> None:
         offer = self.get_selected_offer()
-        self.save_button.configure(state="normal" if offer else "disabled")
+        can_save = bool(offer and not is_browser_assisted_offer(offer))
+        self.save_button.configure(state="normal" if can_save else "disabled")
         self.open_button.configure(
             state="normal" if offer and offer.booking_url else "disabled"
         )
+        if offer and is_browser_assisted_offer(offer):
+            self.status_var.set("Open the site and compare prices manually.")
 
     def _on_save_selected(self) -> None:
         offer = self.get_selected_offer()
         if offer is None:
             self.status_var.set("Select a result first.")
+            return
+        if is_browser_assisted_offer(offer):
+            self.status_var.set("Open the site and save a real priced result instead.")
             return
         if self.on_save_route is None:
             self.status_var.set("Tracking is not connected yet.")

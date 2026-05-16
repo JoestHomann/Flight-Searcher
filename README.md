@@ -44,13 +44,32 @@ FLIGHT_API_PROVIDER=serpapi_google_flights
 SERPAPI_API_KEY=your_serpapi_key
 ```
 
+Query every configured structured API provider and merge the results:
+
+```text
+FLIGHT_API_PROVIDER=multi_api
+```
+
+Open comparison sites for a manual check:
+
+```text
+FLIGHT_API_PROVIDER=browser_assisted
+```
+
+Try conservative automated site checks that only parse machine-readable public
+fare data, without login, CAPTCHA solving, or bypassing site protections:
+
+```text
+FLIGHT_API_PROVIDER=automated_site_check
+```
+
 The app reads default currency, default origin, database path, provider choice, and Amadeus credentials from environment variables or `.env`.
 
 Provider changes can also be saved from the Settings tab. Restart the app after changing providers so the active search service is rebuilt.
 
 ## Features
 
-- Search mock or Amadeus flight offers from the Search tab.
+- Search mock, Amadeus, SerpApi, merged API, browser-assisted, or automated site-check results from the Search tab.
 - Save routes for tracking and run manual or interval-based checks.
 - Show target-price popups when notifications are enabled.
 - Plot saved price history and export route history as CSV.
