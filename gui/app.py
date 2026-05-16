@@ -14,8 +14,12 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from config import AppConfig, load_config, save_env_setting
 from flight_api import FlightProviderError
-from flight_api.browser_assisted_provider import is_browser_assisted_offer
+from flight_api.browser_assisted_provider import is_manual_site_offer
 from flight_api.provider_factory import SUPPORTED_PROVIDERS, create_flight_provider
+from flight_api.semi_manual_provider import (
+    is_semi_manual_source_offer,
+    parse_clipboard_flight_offers,
+)
 from plotting.price_plot import create_price_history_figure
 from services import (
     AutomaticCheckResult,
@@ -78,7 +82,7 @@ SETTINGS_ROWS = (
 
 
 def format_offer_row(offer: FlightOffer) -> tuple[str, ...]:
-    price = "Open site" if is_browser_assisted_offer(offer) else f"{offer.price:.2f}"
+    price = "Open site" if is_manual_site_offer(offer) else f"{offer.price:.2f}"
     return (
         offer.airline,
         offer.origin,
@@ -329,13 +333,20 @@ class SearchTab(ttk.Frame):
             state="disabled",
         )
         self.save_button.grid(row=0, column=1, sticky="e")
+        self.import_button = ttk.Button(
+            actions,
+            text="Import Clipboard",
+            command=self._on_import_clipboard,
+            state="disabled",
+        )
+        self.import_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
         self.open_button = ttk.Button(
             actions,
             text="Open Booking",
             command=self._on_open_booking,
             state="disabled",
         )
-        self.open_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
+        self.open_button.grid(row=0, column=3, sticky="e", padx=(8, 0))
 
     def _sync_return_date_state(self) -> None:
         state = "normal" if self.trip_type_var.get() == "round_trip" else "disabled"
@@ -374,6 +385,7 @@ class SearchTab(ttk.Frame):
     def _set_search_running(self, is_running: bool) -> None:
         self.search_button.configure(state="disabled" if is_running else "normal")
         self.save_button.configure(state="disabled")
+        self.import_button.configure(state="disabled")
         self.open_button.configure(state="disabled")
         self.status_var.set("Searching..." if is_running else "")
 
@@ -392,6 +404,7 @@ class SearchTab(ttk.Frame):
     def _show_search_error(self, title: str, message: str) -> None:
         self.search_button.configure(state="normal")
         self.save_button.configure(state="disabled")
+        self.import_button.configure(state="disabled")
         self.open_button.configure(state="disabled")
         messagebox.showerror(title, message)
         self.status_var.set(message)
@@ -402,16 +415,22 @@ class SearchTab(ttk.Frame):
         for index, offer in enumerate(offers):
             self.results_table.insert("", "end", iid=str(index), values=format_offer_row(offer))
         self.save_button.configure(state="disabled")
+        self.import_button.configure(state="disabled")
         self.open_button.configure(state="disabled")
 
     def _on_result_selected(self, _event: tk.Event | None = None) -> None:
         offer = self.get_selected_offer()
-        can_save = bool(offer and not is_browser_assisted_offer(offer))
+        can_save = bool(offer and not is_manual_site_offer(offer))
         self.save_button.configure(state="normal" if can_save else "disabled")
+        self.import_button.configure(
+            state="normal" if offer and is_semi_manual_source_offer(offer) else "disabled"
+        )
         self.open_button.configure(
             state="normal" if offer and offer.booking_url else "disabled"
         )
-        if offer and is_browser_assisted_offer(offer):
+        if offer and is_semi_manual_source_offer(offer):
+            self.status_var.set("Copy a flight result from the site, then import clipboard.")
+        elif offer and is_manual_site_offer(offer):
             self.status_var.set("Open the site and compare prices manually.")
 
     def _on_save_selected(self) -> None:
@@ -419,7 +438,7 @@ class SearchTab(ttk.Frame):
         if offer is None:
             self.status_var.set("Select a result first.")
             return
-        if is_browser_assisted_offer(offer):
+        if is_manual_site_offer(offer):
             self.status_var.set("Open the site and save a real priced result instead.")
             return
         if self.on_save_route is None:
@@ -432,6 +451,27 @@ class SearchTab(ttk.Frame):
             self.status_var.set(str(exc))
             return
         self.status_var.set("Route saved.")
+
+    def _on_import_clipboard(self) -> None:
+        source_offer = self.get_selected_offer()
+        if source_offer is None or not is_semi_manual_source_offer(source_offer):
+            self.status_var.set("Select a semi-manual source first.")
+            return
+        try:
+            clipboard_text = self.clipboard_get()
+        except tk.TclError:
+            clipboard_text = ""
+        offers = parse_clipboard_flight_offers(clipboard_text, source_offer)
+        if not offers:
+            messagebox.showinfo(
+                "No flights imported",
+                "Copy a flight result block that includes prices, then try again.",
+            )
+            self.status_var.set("No priced flights found in clipboard.")
+            return
+        self.last_results = offers
+        self._populate_results(offers)
+        self.status_var.set(f"Imported {len(offers)} priced result(s) from clipboard.")
 
     def _on_open_booking(self) -> None:
         offer = self.get_selected_offer()

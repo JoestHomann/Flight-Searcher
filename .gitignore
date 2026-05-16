@@ -3,6 +3,9 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+build/
+dist/.env
+dist/storage/
 TODO.txt
 requirements.txt
 storage/*.db

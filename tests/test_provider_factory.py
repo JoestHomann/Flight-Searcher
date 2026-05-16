@@ -7,6 +7,7 @@ from flight_api import (
     BrowserAssistedFlightProvider,
     MockFlightProvider,
     MultiApiFlightProvider,
+    SemiManualSiteFlightProvider,
     SerpApiGoogleFlightsProvider,
 )
 from flight_api.provider_factory import create_flight_provider
@@ -63,9 +64,23 @@ def test_provider_factory_creates_browser_assisted_provider():
     )
 
 
-def test_provider_factory_creates_automated_site_check_provider():
+def test_provider_factory_creates_semi_manual_site_check_provider():
+    assert isinstance(
+        create_flight_provider(make_config("semi_manual_site_check")),
+        SemiManualSiteFlightProvider,
+    )
+
+
+def test_provider_factory_maps_automated_site_check_to_semi_manual_flow():
     assert isinstance(
         create_flight_provider(make_config("automated_site_check")),
+        SemiManualSiteFlightProvider,
+    )
+
+
+def test_provider_factory_keeps_json_ld_site_check_for_raw_public_parsing():
+    assert isinstance(
+        create_flight_provider(make_config("json_ld_site_check")),
         AutomatedSiteFlightProvider,
     )
 

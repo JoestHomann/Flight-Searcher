@@ -10,6 +10,7 @@ from .base_provider import FlightProvider
 from .browser_assisted_provider import BrowserAssistedFlightProvider
 from .mock_provider import MockFlightProvider
 from .multi_api_provider import MultiApiFlightProvider
+from .semi_manual_provider import SemiManualSiteFlightProvider
 from .serpapi_provider import SerpApiGoogleFlightsProvider
 
 
@@ -19,7 +20,7 @@ SUPPORTED_PROVIDERS = (
     "serpapi_google_flights",
     "multi_api",
     "browser_assisted",
-    "automated_site_check",
+    "semi_manual_site_check",
 )
 
 
@@ -45,10 +46,12 @@ def create_flight_provider(config: AppConfig) -> FlightProvider:
     if provider_name in {"browser_assisted", "site_browser_assisted"}:
         return BrowserAssistedFlightProvider()
     if provider_name in {
+        "semi_manual_site_check",
         "automated_site_check",
         "browser_automation",
-        "site_automation",
     }:
+        return SemiManualSiteFlightProvider()
+    if provider_name in {"json_ld_site_check", "site_automation"}:
         return AutomatedSiteFlightProvider(
             timeout_seconds=config.request_timeout_seconds,
         )

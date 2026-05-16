@@ -1,13 +1,18 @@
 """Configuration helpers for the flight search application."""
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent
+)
 
 
 @dataclass(frozen=True, slots=True)

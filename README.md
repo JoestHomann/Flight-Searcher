@@ -56,11 +56,11 @@ Open comparison sites for a manual check:
 FLIGHT_API_PROVIDER=browser_assisted
 ```
 
-Try conservative automated site checks that only parse machine-readable public
-fare data, without login, CAPTCHA solving, or bypassing site protections:
+Open comparison sites, complete any human checks yourself, copy a visible result
+block from the browser, and import the clipboard into priced app results:
 
 ```text
-FLIGHT_API_PROVIDER=automated_site_check
+FLIGHT_API_PROVIDER=semi_manual_site_check
 ```
 
 The app reads default currency, default origin, database path, provider choice, and Amadeus credentials from environment variables or `.env`.
@@ -69,7 +69,7 @@ Provider changes can also be saved from the Settings tab. Restart the app after 
 
 ## Features
 
-- Search mock, Amadeus, SerpApi, merged API, browser-assisted, or automated site-check results from the Search tab.
+- Search mock, Amadeus, SerpApi, merged API, browser-assisted, or semi-manual site-check results from the Search tab.
 - Save routes for tracking and run manual or interval-based checks.
 - Show target-price popups when notifications are enabled.
 - Plot saved price history and export route history as CSV.

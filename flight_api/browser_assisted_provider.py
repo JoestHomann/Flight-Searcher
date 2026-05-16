@@ -14,12 +14,18 @@ from .site_sources import DEFAULT_FLIGHT_SEARCH_SITES, FlightSearchSite
 
 
 BROWSER_ASSISTED_PROVIDER_PREFIX = "browser_assisted:"
+SEMI_MANUAL_SITE_PROVIDER_PREFIX = "semi_manual_site_check:"
+MANUAL_SITE_PROVIDER_PREFIXES = (
+    BROWSER_ASSISTED_PROVIDER_PREFIX,
+    SEMI_MANUAL_SITE_PROVIDER_PREFIX,
+)
 
 
 class BrowserAssistedFlightProvider(FlightProvider):
     """Open search pages and return source-link rows for manual comparison."""
 
     source_provider = "browser_assisted"
+    handoff_provider_prefix = BROWSER_ASSISTED_PROVIDER_PREFIX
 
     def __init__(
         self,
@@ -63,8 +69,8 @@ class BrowserAssistedFlightProvider(FlightProvider):
             )
         return offers
 
-    @staticmethod
     def _handoff_offer(
+        self,
         site: FlightSearchSite,
         origin: str,
         destination: str,
@@ -84,9 +90,13 @@ class BrowserAssistedFlightProvider(FlightProvider):
             price=Decimal("0"),
             currency=currency,
             booking_url=url,
-            source_provider=f"{BROWSER_ASSISTED_PROVIDER_PREFIX}{site.key}",
+            source_provider=f"{self.handoff_provider_prefix}{site.key}",
         )
 
 
 def is_browser_assisted_offer(offer: FlightOffer) -> bool:
     return offer.source_provider.startswith(BROWSER_ASSISTED_PROVIDER_PREFIX)
+
+
+def is_manual_site_offer(offer: FlightOffer) -> bool:
+    return offer.source_provider.startswith(MANUAL_SITE_PROVIDER_PREFIXES)

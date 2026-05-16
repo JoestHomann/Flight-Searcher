@@ -12,6 +12,7 @@ from .base_provider import ProviderResponseError
 from .browser_assisted_provider import BrowserAssistedFlightProvider
 from .mock_provider import MockFlightProvider
 from .multi_api_provider import MultiApiFlightProvider
+from .semi_manual_provider import SemiManualSiteFlightProvider
 from .serpapi_provider import SerpApiGoogleFlightsProvider
 
 __all__ = [
@@ -27,5 +28,6 @@ __all__ = [
     "ProviderNetworkError",
     "ProviderRateLimitError",
     "ProviderResponseError",
+    "SemiManualSiteFlightProvider",
     "SerpApiGoogleFlightsProvider",
 ]
